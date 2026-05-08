@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抽籤囉~~</title>
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --bg-color: #f5f7f9;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }
+
+        .controls {
+            margin-bottom: 30px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        input[type="number"] {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            width: 60px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.1s;
+        }
+
+        button:hover {
+            background-color: #357abd;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        #resetBtn {
+            background-color: #e74c3c;
+        }
+
+        #resetBtn:hover {
+            background-color: #c0392b;
+        }
+
+        .wheel-container {
+            position: relative;
+            margin: 20px auto;
+            width: 400px;
+            height: 400px;
+        }
+
+        canvas {
+            border-radius: 50%;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        }
+
+        .pointer {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 30px solid #333;
+            z-index: 10;
+        }
+
+        .result {
+            margin-top: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            height: 40px;
+            color: #e67e22;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .history-container {
+            margin-top: 30px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+            text-align: left;
+        }
+
+        .history-title {
+            font-weight: bold;
+            color: #7f8c8d;
+            margin-bottom: 10px;
+        }
+
+        .history-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .history-item {
+            background: #ecf0f1;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #2c3e50;
+        }
+
+        .remaining-list {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #95a5a6;
+            word-wrap: break-word;
+            background: #f9f9f9;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        /* Winner pulse animation */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .winner-animate {
+            animation: pulse 0.5s ease-in-out 3;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>抽籤囉~~</h1>
+    
+    <div class="controls">
+        <label for="peopleCount">設定人數:</label>
+        <input type="number" id="peopleCount" min="2" max="40" value="10">
+        <button id="initBtn">重新開始</button>
+        <button id="spinBtn">開始抽籤</button>
+    </div>
+
+    <div class="wheel-container">
+        <div class="pointer"></div>
+        <canvas id="wheelCanvas" width="400" height="400"></canvas>
+    </div>
+
+    <div id="resultDisplay" class="result"></div>
+    
+    <div class="remaining-list">
+        <strong>目前剩餘號碼:</strong> <br>
+        <span id="remainingNums"></span>
+    </div>
+
+    <div class="history-container">
+        <div class="history-title">已抽出號碼:</div>
+        <div id="historyList" class="history-list"></div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('wheelCanvas');
+    const ctx = canvas.getContext('2d');
+    const initBtn = document.getElementById('initBtn');
+    const spinBtn = document.getElementById('spinBtn');
+    const peopleInput = document.getElementById('peopleCount');
+    const resultDisplay = document.getElementById('resultDisplay');
+    const remainingNumsSpan = document.getElementById('remainingNums');
+    const historyListDiv = document.getElementById('historyList');
+
+    let participants = [];
+    let history = [];
+    let currentAngle = 0;
+    let lastTickIndex = -1;
+    let isSpinning = false;
+
+    // Web Audio API for ticking sound
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+    
+    function playTickSound() {
+        if (!audioCtx) audioCtx = new AudioContext();
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+        
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+    }
+
+    const colors = [
+        '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', 
+        '#F7DC6F', '#BB8FCE', '#82E0AA', '#F1948A', '#85C1E9',
+        '#F8C471', '#73C6B6', '#D2B4DE', '#F1948A', '#AED6F1'
+    ];
+
+    function init() {
+        const count = parseInt(peopleInput.value);
+        if (isNaN(count) || count < 2 || count > 40) {
+            alert('請輸入 2 到 40 之間的數字');
+            return;
+        }
+        participants = Array.from({length: count}, (_, i) => i + 1);
+        history = [];
+        currentAngle = 0;
+        lastTickIndex = -1;
+        resultDisplay.textContent = '';
+        resultDisplay.classList.remove('winner-animate');
+        updateUI();
+        drawWheel();
+        spinBtn.disabled = false;
+    }
+
+    function updateUI() {
+        remainingNumsSpan.textContent = participants.join(', ');
+        historyListDiv.innerHTML = history.map(num => `<span class="history-item">${num}</span>`).join('');
+    }
+
+    function drawWheel(highlightIndex = -1) {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = canvas.width / 2 - 10;
+        const sliceAngle = (2 * Math.PI) / participants.length;
+
+        // Check for tick sound based on rotation
+        if (isSpinning && participants.length > 0) {
+            const normalizedAngle = ((currentAngle % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+            const currentTickIndex = Math.floor(((1.5 * Math.PI - normalizedAngle) + (2 * Math.PI)) % (2 * Math.PI) / sliceAngle);
+            
+            if (currentTickIndex !== lastTickIndex) {
+                playTickSound();
+                lastTickIndex = currentTickIndex;
+            }
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        participants.forEach((num, i) => {
+            const startAngle = currentAngle + i * sliceAngle;
+            const endAngle = startAngle + sliceAngle;
+
+            // Draw slice
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+            ctx.closePath();
+            
+            if (i === highlightIndex) {
+                ctx.fillStyle = '#f1c40f'; // Highlight winner
+            } else {
+                ctx.fillStyle = colors[num % colors.length];
+            }
+            
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw label
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(startAngle + sliceAngle / 2);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 18px Arial';
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.fillText(num, radius - 20, 10);
+            ctx.restore();
+        });
+
+        // Center circle decoration
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = varToHex('--primary-color') || '#4a90e2';
+        ctx.stroke();
+    }
+
+    function varToHex(varName) {
+        return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    }
+
+    function spin() {
+        if (isSpinning || participants.length === 0) return;
+
+        isSpinning = true;
+        spinBtn.disabled = true;
+        initBtn.disabled = true;
+        resultDisplay.textContent = '旋轉中...';
+        resultDisplay.classList.remove('winner-animate');
+
+        // Randomized initial velocity and deceleration
+        let velocity = Math.random() * 0.2 + 0.4; 
+        const friction = 0.982 + (Math.random() * 0.01); 
+
+        function animate() {
+            currentAngle += velocity;
+            velocity *= friction;
+
+            drawWheel();
+
+            if (velocity < 0.0015) {
+                isSpinning = false;
+                determineWinner();
+                initBtn.disabled = false;
+            } else {
+                requestAnimationFrame(animate);
+            }
+        }
+
+        animate();
+    }
+
+    function determineWinner() {
+        if (participants.length === 0) return;
+        
+        const sliceAngle = (2 * Math.PI) / participants.length;
+        const normalizedAngle = ((currentAngle % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+        
+        let index = Math.floor(((1.5 * Math.PI - normalizedAngle) + (2 * Math.PI)) % (2 * Math.PI) / sliceAngle);
+        
+        const winner = participants[index];
+        resultDisplay.textContent = `恭喜抽出: ${winner} 號`;
+        resultDisplay.classList.add('winner-animate');
+        
+        // Highlight winner on wheel
+        drawWheel(index);
+
+        // Record to history and remove
+        history.push(winner);
+        participants.splice(index, 1);
+        
+        setTimeout(() => {
+            updateUI();
+            if (participants.length > 0) {
+                drawWheel(); // Redraw without highlight for next round
+                spinBtn.disabled = false;
+            } else {
+                resultDisplay.textContent += ' (結束)';
+                spinBtn.disabled = true;
+            }
+        }, 1500);
+    }
+
+    initBtn.addEventListener('click', init);
+    spinBtn.addEventListener('click', spin);
+
+    // Initial setup
+    init();
+</script>
+
+</body>
+</html>
